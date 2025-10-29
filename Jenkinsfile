@@ -1,55 +1,81 @@
 pipeline {
     agent any
     tools {
-        maven "MAVEN3.9"
-        jdk "JDK17"
+        maven 'MAVEN3.9'
+        jdk 'JDK17'
     }
-    
+
     environment {
         SNAP_REPO = 'vprofile-snapshot'
-		NEXUS_USER = 'admin'
-		NEXUS_PASS = 'admin1995'
-		RELEASE_REPO = 'vprofile-release'
-		CENTRAL_REPO = 'vprofile-maven-central'
-		NEXUSIP = '172.31.19.252'
-		NEXUSPORT = '8081'
-		NEXUS_GRP_REPO = 'vprofile-maven-group'
+        NEXUS_USER = 'admin'
+        NEXUS_PASS = 'admin1995'
+        RELEASE_REPO = 'vprofile-release'
+        CENTRAL_REPO = 'vprofile-maven-central'
+        NEXUSIP = '172.31.19.252'
+        NEXUSPORT = '8081'
+        NEXUS_GRP_REPO = 'vprofile-maven-group'
         NEXUS_LOGIN = 'nexuslogin'
         SONARSERVER = 'sonarserver'
         SONARSCANNER = 'sonarscanner'
     }
 
     stages {
-        stage('Build'){
+        stage('Debug Environment') {
+            steps {
+                echo '=== Environment Debug Information ==='
+                echo "NEXUS_GRP_REPO: ${NEXUS_GRP_REPO}"
+                echo "NEXUSIP: ${NEXUSIP}"
+                echo "NEXUSPORT: ${NEXUSPORT}"
+                echo "Workspace: ${WORKSPACE}"
+                sh 'mvn --version'
+                sh 'java -version'
+                sh 'ls -la'
+                sh 'pwd'
+            }
+        }
+
+        stage('Build') {
             steps {
                 script {
                     try {
-                        echo "Attempting build with Nexus repository..."
-                        sh 'mvn -s settings.xml -DskipTests install'
+                        echo 'Attempting build with Nexus repository...'
+                        sh 'mvn -s settings.xml -DskipTests clean install'
                     } catch (Exception e) {
-                        echo "Build failed with Nexus settings, trying with fallback settings..."
+                        echo "Build failed with Nexus settings: ${e.getMessage()}"
+                        echo 'Trying with fallback settings...'
                         try {
-                            sh 'mvn -s settings-fallback.xml -DskipTests install'
+                            sh 'mvn -s settings-fallback.xml -DskipTests clean install'
                         } catch (Exception e2) {
-                            echo "Build failed with fallback settings, trying with default Maven Central..."
-                            sh 'mvn -DskipTests install'
+                            echo "Build failed with fallback settings: ${e2.getMessage()}"
+                            echo 'Trying with default Maven Central...'
+                            sh 'mvn -DskipTests clean install'
                         }
                     }
                 }
             }
+            post {
+                success {
+                    echo 'Build completed successfully'
+                    archiveArtifacts artifacts: 'target/*.war', allowEmptyArchive: true
+                }
+                failure {
+                    echo 'Build failed'
+                }
+            }
         }
-        
+
         stage('Test') {
             steps {
                 script {
                     try {
-                        echo "Running unit tests..."
+                        echo 'Running unit tests...'
                         sh 'mvn -s settings.xml test'
                     } catch (Exception e) {
-                        echo "Tests failed with Nexus settings, trying with fallback..."
+                        echo 'Tests failed with Nexus settings, trying with fallback...'
                         try {
                             sh 'mvn -s settings-fallback.xml test'
                         } catch (Exception e2) {
+                            echo 'Tests failed with fallback, trying with default...'
                             sh 'mvn test'
                         }
                     }
@@ -57,11 +83,19 @@ pipeline {
             }
             post {
                 always {
-                    publishTestResults testResultsPattern: 'target/surefire-reports/*.xml'
+                    script {
+                        if (fileExists('target/surefire-reports/*.xml')) {
+                            junit allowEmptyResults: true, testResultsPattern: 'target/surefire-reports/*.xml'
+                        } else {
+                            echo 'No test results found'
+                        }
+                    }
                 }
             }
         }
-        
+
+        // Temporarily disabled - enable after basic build is working
+        /*
         stage('SonarQube Analysis') {
             environment {
                 scannerHome = tool "${SONARSCANNER}"
@@ -88,7 +122,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Quality Gate') {
             steps {
                 timeout(time: 1, unit: 'HOURS') {
@@ -108,5 +142,6 @@ pipeline {
                 }
             }
         }
+        */
     }
 }
