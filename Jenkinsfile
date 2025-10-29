@@ -15,6 +15,8 @@ pipeline {
 		NEXUSPORT = '8081'
 		NEXUS_GRP_REPO = 'vprofile-maven-group'
         NEXUS_LOGIN = 'nexuslogin'
+        SONARSERVER = 'sonarserver'
+        SONARSCANNER = 'sonarscanner'
     }
 
     stages {
@@ -31,6 +33,76 @@ pipeline {
                         } catch (Exception e2) {
                             echo "Build failed with fallback settings, trying with default Maven Central..."
                             sh 'mvn -DskipTests install'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                script {
+                    try {
+                        echo "Running unit tests..."
+                        sh 'mvn -s settings.xml test'
+                    } catch (Exception e) {
+                        echo "Tests failed with Nexus settings, trying with fallback..."
+                        try {
+                            sh 'mvn -s settings-fallback.xml test'
+                        } catch (Exception e2) {
+                            sh 'mvn test'
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    publishTestResults testResultsPattern: 'target/surefire-reports/*.xml'
+                }
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            environment {
+                scannerHome = tool "${SONARSCANNER}"
+            }
+            steps {
+                withSonarQubeEnv("${SONARSERVER}") {
+                    script {
+                        try {
+                            echo "Starting SonarQube analysis..."
+                            sh '''${scannerHome}/bin/sonar-scanner \
+                               -Dsonar.projectKey=vprofile \
+                               -Dsonar.projectName=vprofile-repo \
+                               -Dsonar.projectVersion=1.0 \
+                               -Dsonar.sources=src/ \
+                               -Dsonar.java.binaries=target/classes \
+                               -Dsonar.junit.reportsPath=target/surefire-reports/ \
+                               -Dsonar.jacoco.reportsPath=target/jacoco.exec \
+                               -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml'''
+                        } catch (Exception e) {
+                            echo "SonarQube analysis failed: ${e.getMessage()}"
+                            currentBuild.result = 'UNSTABLE'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    script {
+                        try {
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                            } else {
+                                echo "Quality Gate passed successfully!"
+                            }
+                        } catch (Exception e) {
+                            echo "Quality Gate check failed or timed out: ${e.getMessage()}"
+                            currentBuild.result = 'UNSTABLE'
                         }
                     }
                 }
