@@ -222,6 +222,60 @@ pipeline {
                 }
             }
         }
+
+        stage('Upload Artifact to Nexus') {
+            when {
+                // Only upload if build was successful
+                expression { fileExists('target/vprofile-v2.war') }
+            }
+            steps {
+                script {
+                    try {
+                        echo 'Uploading artifact to Nexus repository...'
+                        echo "Repository: ${RELEASE_REPO}"
+                        echo "Nexus URL: ${NEXUSIP}:${NEXUSPORT}"
+
+                        nexusArtifactUploader(
+                            nexusVersion: 'nexus3',
+                            protocol: 'http',
+                            nexusUrl: "${NEXUSIP}:${NEXUSPORT}",
+                            groupId: 'QA',
+                            version: "${env.BUILD_ID}-${env.BUILD_TIMESTAMP}",
+                            repository: "${RELEASE_REPO}",
+                            credentialsId: "${NEXUS_LOGIN}",
+                            artifacts: [
+                                [artifactId: 'vproapp',
+                                 classifier: '',
+                                 file: 'target/vprofile-v2.war',
+                                 type: 'war']
+                            ]
+                        )
+
+                        echo "✅ Artifact uploaded successfully!"
+                        echo 'Group ID: QA'
+                        echo 'Artifact ID: vproapp'
+                        echo "Version: ${env.BUILD_ID}-${env.BUILD_TIMESTAMP}"
+                        echo "Repository: ${RELEASE_REPO}"
+                    } catch (Exception e) {
+                        echo "❌ Nexus upload failed: ${e.getMessage()}"
+                        echo 'This may be due to:'
+                        echo '1. Nexus server not accessible'
+                        echo '2. Invalid credentials'
+                        echo '3. Repository permissions'
+                        echo '4. Network connectivity issues'
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+            post {
+                success {
+                    echo 'Artifact successfully uploaded to Nexus repository'
+                }
+                failure {
+                    echo 'Failed to upload artifact to Nexus'
+                }
+            }
+        }
     }
 
     post {
