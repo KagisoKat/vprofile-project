@@ -296,4 +296,11 @@
             </plugin>
         </plugins>
     </build>
+    <repositories>
+      <repository>
+        <id>codeartifact</id>
+        <name>codeartifact</name>
+    <url>https://kagisodevops-533267335326.d.codeartifact.us-east-1.amazonaws.com/maven/maven-central-store/</url>
+      </repository>
+    </repositories>
 </project>
